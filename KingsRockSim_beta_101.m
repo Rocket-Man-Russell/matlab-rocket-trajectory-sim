@@ -988,7 +988,7 @@ if  rocketFromFile == false
     
     fprintf('%s\n','Surface Finish Options','1: Totally smooth surface','2: Polished metal or wood','3: Natural sheet metal',...
             '4: Smooth matte paint finish','5: Standard camouflage paint finish')
-	[skinRoughness] = changeInput(simRunNum,'surface finish','Enter a value based on the above key for the rocket''s surface finish:  ',skinRoughness);
+	[skinRoughness] = changeInput(simRunNum,'surface finish','Enter a value based on the above key for the rocket''s surface finish:  ',skinRoughness,[1,2,3,4,5]);
 
         rocketName = [];
         while isempty(rocketName) == true
@@ -1786,7 +1786,7 @@ if numOfChutes > 0
         disp(parachute)
         
         [chuteDeployMethod(chuteCount)] = changeInput(simRunNum,['parachute number ',num2str(chuteCount),' deployment method'], ...
-            ['Enter a value, based on the above key, for the deployment method of chute No.',num2str(chuteCount),': '],chuteDeployMethod(chuteCount));
+            ['Enter a value, based on the above key, for the deployment method of chute No.',num2str(chuteCount),': '],chuteDeployMethod(chuteCount),[1,2,3,4]);
                                          
         switch chuteDeployMethod(chuteCount)
             case 1
@@ -1839,7 +1839,7 @@ if  numOfChutes > 0
         '1) Calculate using the more significant drag component, ignoring the lesser ones (e.g. deploy drogue, ignore rocket drag)',...
         '2) Calculate air flow speed reduction going from part to part (e.g. rocket to drogue), finally obtaining an overall drag force')
     [dragCalcMethod] = changeInput(simRunNum,'descent drag calculation method', ...
-        'Enter a value based on the above key for the method you want to use: ',dragCalcMethod);
+        'Enter a value based on the above key for the method you want to use: ',dragCalcMethod,[1,2]);
 end
 
 %%%
@@ -2031,7 +2031,7 @@ end
 switch failureOption
     case 0 % select failure mode
         [failureMode] = changeInput(simRunNum,'type of failure mode to simulate',...
-                        'Enter a value from the above key for the type of failure mode to simulate [1-8]: ',failureMode);
+                        'Enter a value from the above key for the type of failure mode to simulate [1-8]: ',failureMode,[1,2,3,4,5,6,7,8]);
     case 1 % randomize failure mode
         if  failDescriptor == true
             fprintf('%s\n','Based on historical data, failure modes typically occur 8.5% (523 of 6169) of the time.',...
@@ -2826,14 +2826,14 @@ fprintf('%s\n',['As of alpha ',num2str(alphaVer),', this program can simulate ce
     control_system =  max(strcmp((input('Does your rocket employ a control system from the list of implemented options? [Y/N]: ','s')),yes));
 if  control_system == true
     [controlSystem] = changeInput(simRunNum,'type of control system',...
-                        'Enter a value from the above key for the control system to use [1,2]: ',controlSystem);
+                        'Enter a value from the above key for the control system to use [1,2]: ',controlSystem,[1,2]);
 	switch controlSystem
         case 1
             %disp('The first set of fins/canards being moveable, and a rate of fin rotation of 10 deg./second, are assumed.')
             moveableFinSet = 0;
             while isempty(find((1:finSetNUM) == moveableFinSet)) == true
             [moveableFinSet] = changeInput(simRunNum,'set number for moveable fins/canards',...
-                        ['Enter a value (from numbers ',num2str(1:finSetNUM),') for the fin/canard set that is moveable: '],moveableFinSet);
+                        ['Enter a value (from numbers ',num2str(1:finSetNUM),') for the fin/canard set that is moveable: '],moveableFinSet,(1:finSetNUM));
             end
             [maxDeflection] = changeInput(simRunNum,'maximum fin/canard deflection angle',...
                         'Enter a value for the maximum fin/canard deflection angle (+/- degrees): ',maxDeflection);

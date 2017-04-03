@@ -1,4 +1,4 @@
-function [varName] = changeInput(simRun,varDescriptor,inputQuestion,varName)
+function [varName] = changeInput(simRun,varDescriptor,inputQuestion,varName,varargin)
 %
 global yes
 %
@@ -15,17 +15,23 @@ elseif  simRun == 1
 end
 %
 if      changeValue == true
-	validInput = false;
+            validInput = false;
 
 	while 	validInput == 0
 		varName = input(inputQuestion,'s');
         varName = str2num(varName);
 
-		if 	(  ~(isempty(varName)) && ...
+		if 	( (nargin > 4) && (isempty(find(varName == varargin{1})) == false) ) ||...
+                ...
+                (  (nargin == 4) && ...
+                ~(isempty(varName)) && ...
 			     isnumeric(varName) && ...
 			     isreal(varName) && ...
 			     isscalar(varName) == true  )
-		validInput = true;
+             
+            validInput = true;
+        else
+            warning('You did not enter a valid input. Try again.')
 		end
 	end
         
