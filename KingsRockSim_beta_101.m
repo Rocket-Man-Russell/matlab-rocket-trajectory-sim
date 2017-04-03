@@ -752,9 +752,7 @@ if  simRunNum == 1
     %%
     if  staticStability == true
     
-[   y_i,...
-    y_i_projected,...
-    component_mass,...
+[   component_mass,...
     component_position,...
     component_isProp,...
     deployChute,...
@@ -2198,6 +2196,8 @@ finShapeCounter = 1;
 y_i_projOverlay = [];
 fin_area = 0;
 
+[y_i,y_i_projected] = deal(zeros(1,length(xAxisRange)));
+
 
 %%
 for COPcount = 1:length(xAxisRange)
@@ -2472,20 +2472,13 @@ for COPcount = 1:length(xAxisRange)
 	end
             %%
 
-            if      (COPcount <  length(xAxisRange)) && (simRunNum == 1) % prevents issue on re-runs
-                    y_i             = wextend('addcol','zpd',y_i,1,'r');
-                    y_i_projected   = wextend('addcol','zpd',y_i_projected,1,'r');
-                
-            elseif  (COPcount == length(xAxisRange)) && (simRunNum == 1)
-                    y_i             = wextend('addcol','zpd',y_i,1,'l');
-                    y_i_projected   = wextend('addcol','zpd',y_i_projected,1,'l');
-            end
-            
             y_i_total       = y_i(COPcount) + y_i_projected(COPcount);            
             y_iArray        = [y_iArray,y_i_total];
 
 end
             x_iArray        = x_increment*(1:length(y_iArray));
+            y_i = [0,y_i];
+            y_i_projected = [0,y_i_projected];
 
 %
 
