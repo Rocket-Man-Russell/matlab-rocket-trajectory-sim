@@ -2905,10 +2905,13 @@ while simCounter < numOfSteps
     end
     
     
-    if  ((failureMode == 7) || (failureMode == 8)) && (simCounter > 1) ...
-            && (sim_altitude2(simCounter) - sim_altitude2(simCounter-1) < 0)
-        disp(['Failure mode no.',num2str(failureMode),' experienced at T = ',num2str(sim_time(simCounter)),'s.'])
-        break
+    if  (simCounter > 1) && (sim_altitude2(simCounter) - sim_altitude2(simCounter-1) < 0)
+        if ((failureMode == 7) || (failureMode == 8))
+            disp(['Failure mode no.',num2str(failureMode),' experienced at T = ',num2str(sim_time(simCounter)),'s.'])
+            break
+        else
+            descentPhase = true;
+        end
     end
 
     
@@ -2964,7 +2967,10 @@ while simCounter < numOfSteps
     
     sim_massFlow(simCounter) = phase_massFlow(phase(sim_flightPhase(simCounter+1)));
     
-    sim_area(simCounter) = phase_area(phase(sim_flightPhase(simCounter+1)));
+        sim_area(simCounter) = phase_area(phase(sim_flightPhase(simCounter+1)));
+    if  (failureMode == 5) && (descentPhase == true)
+        sim_area(simCounter) = sim_area(simCounter) + (pi*nose_baseRadius^2);
+    end
     
     if  simCounter > 1
         if  sim_phaseMass(simCounter) < 0
@@ -3078,14 +3084,14 @@ while simCounter < numOfSteps
                 if  exist('chuteFailure','var') == 0
                     disp(['Failure mode no.',num2str(failureMode),' experienced at T = ',num2str(sim_time(simCounter)),'s.'])
                 end
-                chuteFailure = true;
-                deployChute = false;
+                chuteFailure    = true;
+                deployChute     = false;
             else
-                deployChute = true;
-                descentPhase = true;
+                deployChute     = true;
+                descentPhase    = true;
             end
         else
-                deployChute = false;
+                deployChute     = false;
         end
 
         
