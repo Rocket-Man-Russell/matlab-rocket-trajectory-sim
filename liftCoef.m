@@ -15,7 +15,6 @@ function [sim_liftCoef] = liftCoef(sim_angleOfAttack)
             sim_liftCoef = (-0.474*pi*sim_angleOfAttack + 2.445);
     else
             sim_liftCoef = 0;
-            warning('Extremely high angle of attack encountered.')
 	end
 end
 % sim_liftCoef(simCounter) = liftCoef(sim_angleOfAttack(simCounter))

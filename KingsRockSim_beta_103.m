@@ -133,6 +133,8 @@ commandwindow
     end
     
     fprintf('%s\n','If you make a mistake in entering values for user input, you''ll need to CTRL+C and restart the program.',[])
+    
+    warning('KingsRockSim has not yet been fully adapted for multiple rocket stages. Use this feature with caution.')
 
     
 %% VARIABLES [var01]
@@ -178,6 +180,8 @@ commandwindow
  stage_mass             //  Inert mass plus propellant mass for the stage.
  stage_thrustWeight     //  This ratio should be used to guide the choice of thrust magnitude.
  stage_massFlow         //  Calculated propellant mass flow rate for the stage.
+ stage_motorType        //  Motor type (monoprop, biprop etc.) per stage
+ stage_motorOFratio     //  Motor oxidiser-to-fuel ratio per stage
 
  grossLiftoffMass       //  Gross lift-off mass
  numOfStages            //  Number of stages
@@ -238,6 +242,12 @@ commandwindow
  sim_totalEnergy        //  Total energy (potential plus kinetic) at a given time
  sim_dynViscosity       //  Dynamic viscosity of air at a given point
  sim_Reynolds           //  Reynolds number at a given point
+ 
+ sim_propellantMass     //  Oxidiser mass at a given time (biprops/hybrids)
+ sim_fuelMass           //  Fuel grain mass at a given time (biprops/hybrids)
+
+ propellantMass         //  Initial (launch) oxidiser mass (biprops/hybrids)
+ fuelMass               //  Initial (launch) fuel mass (biprops/hybrids)
  dynViscosity           //  Array of data for dynamic viscosity wrt temperature
 
  Results.Apogee                 //  Apogee altitude and time to reach it
@@ -262,6 +272,7 @@ commandwindow
  graph_DynPress         //  Graph of the dynamic pressure wrt time
  graph_atmosDens        //  Graph of the atmospheric density wrt time
  graph_angle            //  Graph of the inclination/pitch angle wrt time
+ thrustGraphData        //  Thrust-curve graph for imported engine files
 
  x_increment            //  X-axis increment used when calculating values for Y-axis in rocket design
  x_iArray               //  Array of X-axis values
@@ -357,6 +368,8 @@ commandwindow
  rowCount           //  Counter for row data in thrustData
  numOfEngines       //  Total number of engine files added
  firingCounter      //  Counter used to determine which engine file to use
+
+ massFlow_count     //  Count vector used in loop to determine mass flow given an O:F ratio
 
  microgFig          //  Used to get the handle for a microgravity figure with multiple graphs
  maxResult_Names    //  Cell array of names for max output values
@@ -825,7 +838,10 @@ if  simRunNum == 1
     ...
 	ignition,...
 	burnout,...
-	separation	] = deal(zeros(1,numOfStages));
+	separation,...
+    ...
+    stage_motorType,...
+    stage_motorOFratio     ] = deal(zeros(1,numOfStages));
 
 
 [   phase,...
@@ -884,7 +900,10 @@ if  simRunNum == 1
     sim_COP,...
     sim_COM,...
     sim_MOI,...
-    sim_stability   ] = deal(zeros(1,round(expFlightDur/timeStep)));
+    sim_stability,...
+    ...
+    sim_propellantMass,...
+    sim_fuelMass    ] = deal(zeros(1,round(expFlightDur/timeStep)));
 
     %%
     
@@ -913,7 +932,7 @@ elseif simRunNum > 1
     sim_flightPhase,sim_phaseMass,sim_potEnergy,sim_kinEnergy,...
     sim_totalEnergy, sim_dynViscosity, sim_Reynolds, sim_windVelocity,...
     sim_angleOfAttack, sim_liftCoef, sim_windLift, sim_dragCoefI,...
-    sim_COP, sim_COM, sim_MOI, sim_stability ...
+    sim_COP, sim_COM, sim_MOI, sim_stability, sim_propellantMass, sim_fuelMass ...
     ...
     ] = extendSimData(expFlightDur, timeStep, simRunNum, numOfSteps, ...
     ...
@@ -928,7 +947,7 @@ elseif simRunNum > 1
     sim_flightPhase,sim_phaseMass,sim_potEnergy,sim_kinEnergy,...
     sim_totalEnergy,sim_dynViscosity,sim_Reynolds,sim_windVelocity,...
     sim_angleOfAttack,sim_liftCoef,sim_windLift,sim_dragCoefI,...
-    sim_COP,sim_COM,sim_MOI,sim_stability);
+    sim_COP,sim_COM,sim_MOI,sim_stability,sim_propellantMass,sim_fuelMass);
 
     end
 
@@ -1714,7 +1733,32 @@ for stage_count = 1:numOfStages
                  stage_impulse(stage_count),stage_burnTime(stage_count),stage_area(stage_count),...
                  stage_mass(stage_count),stage_thrustWeight(stage_count),stage_massFlow(stage_count)],...
                  '-append','delimiter',',');
-    
+
+             
+    %
+    fprintf('%s\n','The types of motor simulated are as such:','1. Solid','2. Monopropellant',...
+        '3. Bipropellant','4. Hybrid')
+	[stage_motorType(stage_count)] = changeInput(simRunNum,['stage ',num2str(stage_count),' motor type'], ...
+        ['Enter a value, based on the above key, for the motor type for stage No.',num2str(stage_count),': '],...
+        stage_motorType(stage_count),[1,2,3,4]);
+    switch stage_motorType(stage_count)
+        case {1,2}
+            % placeholder
+        case {3,4}
+            fprintf('%s\n','This simulator will usually assume the Oxidiser-to-Fuel (O:F) ratio is equal to',...
+                'the mass ratio of fuels/propellants, thus using up all the fuel/propellant during the motor burn.',...
+                'If this is untrue of your motor, you can enter a value for the expected average O:F ratio.')
+                motorOFratio =  max(strcmp((input('Do you want to enter a value for the O:F ratio? [Y/N]: ','s')),yes));
+           if   motorOFratio == true
+                [stage_motorOFratio(stage_count)] = changeInput(simRunNum,['stage ',num2str(stage_count),' motor O:F ratio'], ...
+                    ['Enter a number for the motor ''O'' value in the ''O:F'' ratio for stage No.',num2str(stage_count),': '],...
+                        stage_motorOFratio(stage_count));
+                disp(['You have selected ',num2str(stage_motorOFratio(stage_count)),':1 for the stage ',num2str(stage_count),' O:F ratio.'])
+           else
+               stage_motorOFratio(stage_count) = nan;
+           end
+    end
+    %
 end
 
 
@@ -1739,8 +1783,44 @@ elseif  inputsFromFile == true
              = deal(inputsCellArray{3,stageInfoCounter:stageInfoCounter+12});
          
             stageInfoCounter = stageInfoCounter + 13;
+            
+    %
+    fprintf('%s\n','The types of motor simulated are as such:','1. Solid','2. Monopropellant',...
+        '3. Bipropellant','4. Hybrid')
+	[stage_motorType(stage_count)] = changeInput(simRunNum,['stage ',num2str(stage_count),' motor type'], ...
+        ['Enter a value, based on the above key, for the motor type for stage No.',num2str(stage_count),': '],...
+        stage_motorType(stage_count),[1,2,3,4]);
+    switch stage_motorType(stage_count)
+        case {1,2}
+            % placeholder
+        case {3,4}
+            fprintf('%s\n','This simulator will usually assume the Oxidiser-to-Fuel (O:F) ratio is equal to',...
+                'the mass ratio of fuels/propellants, thus using up all the fuel/propellant during the motor burn.',...
+                'If this is untrue of your motor, you can enter a value for the expected average O:F ratio.')
+                motorOFratio =  max(strcmp((input('Do you want to enter a value for the O:F ratio? [Y/N]: ','s')),yes));
+           if   motorOFratio == true
+                [stage_motorOFratio(stage_count)] = changeInput(simRunNum,['stage ',num2str(stage_count),' motor O:F ratio'], ...
+                    ['Enter a number for the motor ''O'' value in the ''O:F'' ratio for stage No.',num2str(stage_count),': '],...
+                        stage_motorOFratio(stage_count));
+                disp(['You have selected ',num2str(stage_motorOFratio(stage_count)),':1 for the stage ',num2str(stage_count),' O:F ratio.'])
+           else
+               stage_motorOFratio(stage_count) = nan;
+           end
+    end
+    %
+            
         end
 end
+
+%
+for T2WratioCount = 1:numOfStages
+    disp(['The thrust-to-weight ratio for stage ',num2str(T2WratioCount),' is ',...
+        num2str(stage_thrustWeight(T2WratioCount)),':1, so about ',num2str(round(stage_thrustWeight(T2WratioCount))),':1.'])
+    if  stage_thrustWeight(T2WratioCount) < 5
+        warning('Thrust-to-weight should usually be above 5:1.')
+    end
+end
+%
 
 grossLiftoffMass = payloadMass + sum(stage_mass);
 
@@ -2125,10 +2205,10 @@ end % {flight analysis}
 %
 if  flight_analysis == true
 %%%
-
 %
 fprintf('%s\n','You now have the option to replace the average thrust data with more',...
-    'accurate thrust wrt time data from an engine file.')
+    'accurate thrust wrt time data from an engine file.',...
+    'Make sure any comment lines end with a non-numeric symbol.')
 
 engineCounter = 0;
 stageCounter = 1;
@@ -2188,6 +2268,7 @@ while engineCounter < numOfStages
         burnout(stageCounter) = ignition(stageCounter) + engine.data(end,1); % updates burnout accordingly
         if  stage_burnTime(stageCounter) ~= burnout(stageCounter)
             stage_burnTime(stageCounter)  = burnout(stageCounter);
+            phase_endTime(3*stageCounter-1) = stage_burnTime(stageCounter);
         end
         % thrustData contains all the thrust data (in the second column) for a range
         % of times specified by the first column
@@ -2203,8 +2284,10 @@ end
 
 numOfEngines = engineCounter;
 %
-thrustGraphData = cell2mat(thrustData);
-makeGraph('Line',simRunNum,'Thrust Curve','Time (s)','Thrust (N)',thrustGraphData(:,1),thrustGraphData(:,2))
+if  numOfEngines > 0
+    thrustGraphData = cell2mat(thrustData);
+    makeGraph('Line',simRunNum,'Thrust Curve','Time (s)','Thrust (N)',thrustGraphData(:,1),thrustGraphData(:,2))
+end
 %
 %%%
 end % {flight analysis}
@@ -2515,16 +2598,15 @@ end
 centreOfPlanformArea = sum( (y_iArray*x_increment).*x_iArray ) ...
                      / sum( y_iArray*x_increment );
             
-COP_options.Barrowman_Equations = 1;
-COP_options.Centre_of_Area = 2;
-
 fprintf('%s\n','One of two methods can be used to calculate the static COP: by using the Barrowman equations, which is', ...
     'restricted in its rocket design options (no canards!), or by calculating the centre of area, which is a', ...
-    'less accurate approximation of the static COP.')
-disp(COP_options)
+    'less accurate approximation of the static COP.',...
+    '1. Barrowman Equations','2. Centre of Area (aka the Cardboard Cut-out Method)')
 
 COP_selected = input('Enter a number, corresponding to the above key, for the method of calculating the static COP: ');
-     
+
+COP_options.Barrowman_Equations = 1;
+COP_options.Centre_of_Area = 2;
 
 if      COP_method == 1  
         centreOfPressure = (input('Enter a value for the distance of the COP from the nose tip: '))*10^-metricLength;
@@ -2667,8 +2749,7 @@ elseif  COM_method == 0
         
         disp(['The COM at launch is located ',num2str(centreOfMass*10^3),' mm from the nose tip.']);
 
-	component_isProp = ~component_isProp;
-	centreOfMass_noProp = sum(component_isProp.*component_mass.*component_position)/sum(component_isProp.*component_mass);
+	centreOfMass_noProp = sum(~component_isProp.*component_mass.*component_position)/sum(~component_isProp.*component_mass);
 
 	disp(['The COM at propellant depletion is located ',num2str(centreOfMass_noProp*10^3),' mm from the nose tip.']);
     
@@ -2682,11 +2763,43 @@ elseif  COM_method == 0
     
     elseif  MOI_method == 0
             MOInertia           = sum(cell2mat(component_MOI));
-            MOInertia_noProp    = sum(cell2mat(component_MOI).*component_isProp);
+            MOInertia_noProp    = sum(cell2mat(component_MOI).*~component_isProp);
             fprintf('%s\n',['The rocket''s MOI at launch is ',num2str(MOInertia),' kg.m^2'],['The rocket''s MOI at propellant depletion is ',num2str(MOInertia_noProp),' kg.m^2'])
     end
 
 end
+
+
+    %
+    for massFlow_count = 1:numOfStages
+        if  isnan(stage_motorOFratio(massFlow_count)) == false
+            propellantMass = max(nonzeros(component_isProp.*component_mass));
+            fuelMass = min(nonzeros(component_isProp.*component_mass));
+            % assume always more oxidiser than fuel
+            stage_massFlow(massFlow_count) =  (propellantMass/stage_burnTime(massFlow_count)) * ...
+                        ((stage_motorOFratio(massFlow_count)+2)/(stage_motorOFratio(massFlow_count)+1));
+            % accounts for propellant flow + fuel flow based on O:F ratio
+            phase_massFlow(3*massFlow_count-1) = stage_massFlow(massFlow_count);
+        end
+    end
+    %
+    
+        %
+        if  sum(component_mass) ~= sum(stage_mass)
+            if  numOfStages == 1
+                warning('The sum of your component masses does not equal the previously established total mass, which will now be overridden.')
+                stage_mass(1) = sum(component_mass);
+                stage_propMass(1) = sum(component_mass.*component_isProp);
+                stage_inertMass(1) = sum(component_mass.*~component_isProp);
+                phase_mass(1) = stage_mass(1);
+                phase_mass(3) = stage_mass(1)-( stage_massFlow(1)*stage_burnTime(1) );
+                grossLiftoffMass = stage_mass(1);
+                
+            elseif  numOfStages > 1
+                    error('The sum of your component masses does not equal the previously established total mass. Check your inputs before you try again.')
+            end
+        end
+        %
 
 %%%
 end % {static stability analysis}
@@ -2778,7 +2891,8 @@ COMpointText = text(centreOfMass*1.01,0,'COM');
 saveas(gcf,['Rocket_Design_(',num2str(simRunNum),').jpg']);
 tic; while toc < 2; end
 commandwindow
-pauseFix = input('The current graph represents the rocket''s stability at launch. Hit enter to view it at propellant depletion.');
+disp('The current graph represents the rocket''s stability at launch.')
+pauseFix = input('Hit enter to view it at propellant depletion.');
 %drawnow;pause;drawnow % fix for hanging on pause issue with matlab r2016a
 figure(gcf)
 
@@ -2819,6 +2933,9 @@ close all
 
 
 %% Dynamic stability
+%
+% This section should be made obselete once the rocket pitch angle is no
+% longer tied to the flight path angle for 3DOF sims
 %
 fprintf('%s\n','There are three phases of flight for which the effects of wind (dynamic stability) can be simulated:',...
     '1. The powered ascent/motor burn phase (from launch till burnout)',...
@@ -2924,7 +3041,6 @@ deal(   initial_mass,   int_range,      int_altitude,       int_velocity,       
 %deal(   initial_mass,   int_range,      int_altitude,       int_velocity,          pitchAngle,         yawAngle);
 
 sim_componentMass   = component_mass;
-component_isProp    = ~component_isProp;
 sim_componentMOI    = cell2mat(component_MOI);
 
 
@@ -2992,16 +3108,16 @@ while simCounter < numOfSteps
             sim_thrust(simCounter) = interp1( thrustData{firingCounter}(:,1),...
                                               thrustData{firingCounter}(:,2),...
                                               sim_time(simCounter),'linear' );
-
-            if  sim_time(simCounter) >= separation(firingCounter)
-                firingCounter = firingCounter + 1;
-            end
-            % Next stage engine ignition occurs after previous stage separation
-        
         else
             sim_thrust(simCounter) = phase_thrust(phase(sim_flightPhase(simCounter+1)));
         end
     end
+    
+            if  sim_time(simCounter) >= separation(firingCounter)
+                firingCounter = firingCounter + 1;
+            end
+            % Next stage engine ignition occurs after previous stage separation
+            
     
         if (failureMode == 4 || failureMode == 6) ...
                 && sim_time(simCounter) >= motorFailTime
@@ -3070,12 +3186,25 @@ while simCounter < numOfSteps
             %}
         
             for massCount = 1:length(sim_componentMass)
-                if  component_isProp(massCount) == true
-                    sim_componentMass(massCount) = sim_componentMass(massCount) - sim_massFlow(simCounter)*dt * ...
-                                        ( component_mass(massCount)/sum(component_mass.*component_isProp) );
+                if      component_isProp(massCount) == true && motorOFratio == false
+                        sim_componentMass(massCount) = sim_componentMass(massCount) - sim_massFlow(simCounter)*dt * ...
+                                        ( component_mass(massCount)/sum(component_mass.*component_isProp) ); % mass ratio
+                
+                elseif  component_isProp(massCount) == true && motorOFratio == true
+                    if      component_mass(massCount) == propellantMass
+                            sim_componentMass(massCount) = sim_componentMass(massCount) - sim_massFlow(simCounter)*dt * ...
+                            (stage_motorOFratio(firingCounter)/(stage_motorOFratio(firingCounter)+1));
+                        sim_propellantMass(simCounter) = sim_componentMass(massCount);
+                        
+                    elseif  component_mass(massCount) == fuelMass
+                            sim_componentMass(massCount) = sim_componentMass(massCount) - sim_massFlow(simCounter)*dt * ...
+                            (1/(stage_motorOFratio(firingCounter)+1));
+                        sim_fuelMass(simCounter) = sim_componentMass(massCount);
+                    end
                 end
             end
             sim_COM(simCounter) = sum(sim_componentMass.*component_position)/sum(sim_componentMass);
+            
             
             for massCount = 1:length(sim_componentMass)
                 sim_componentMOI(massCount) = sim_componentMass(massCount)*(component_position(massCount)-sim_COM(simCounter))^2;
@@ -3222,15 +3351,21 @@ if  staticStability == true
 
     if  ~(((nose_length/R_length) >= 0.2) && ((nose_length/R_length) <= 0.6))
     
-            [~,warnID] = lastwarn;
-            if  (strcmp(warnID,CDcalcWarnID) == 0) && (sim_dragCoefO(1) == 0)
-                warning(CDcalcWarnID,CDcalcWarnMSG)
-                setDragCoef = max(strcmp((input('Set the parasite drag coefficient to a constant value (e.g. 0.75)? [Y/N]: ','s')),yes));
-                if  setDragCoef == true
-                    sim_dragCoefO(1) = input('Enter a value to set the parasite drag to: ');
-                end
+            if  exist('warnsDisplayed','var') == true
+                newWarnNum = length(warnsDisplayed)+1;
+            else
+                newWarnNum = 1; warnsDisplayed = cell(1);
             end
-                    sim_dragCoefO(simCounter+1) = sim_dragCoefO(simCounter);
+            
+                if  (max(strcmp(warnsDisplayed,CDcalcWarnID)) == 0) && (sim_dragCoefO(1) == 0)
+                    warning(CDcalcWarnID,CDcalcWarnMSG)
+                    warnsDisplayed{newWarnNum} = CDcalcWarnID;
+                    setDragCoef = max(strcmp((input('Set the parasite drag coefficient to a constant value (e.g. 0.75)? [Y/N]: ','s')),yes));
+                    if  setDragCoef == true
+                        sim_dragCoefO(1) = input('Enter a value to set the parasite drag to: ');
+                    end
+                end
+                        sim_dragCoefO(simCounter+1) = sim_dragCoefO(simCounter);       
     end
 
         if  (sim_machNum(simCounter) > 0) && (setDragCoef == false)
@@ -3253,9 +3388,15 @@ if  staticStability == true
                                                         
             if      critRatioError == true
                 
-                    [~,warnID] = lastwarn;
-                    if  strcmp(warnID,critWarnID) == 0
+                if  exist('warnsDisplayed','var') == true
+                    newWarnNum = length(warnsDisplayed)+1;
+                else
+                    newWarnNum = 1; warnsDisplayed = cell(1);
+                end
+                
+                    if  max(strcmp(warnsDisplayed,critWarnID)) == 0
                         warning(critWarnID,critWarnMSG)
+                        warnsDisplayed{newWarnNum} = critWarnID;
                     end
             end
         end
@@ -3263,9 +3404,15 @@ if  staticStability == true
     
 elseif  staticStability == false
             
-        [~,warnID] = lastwarn;
-        if  strcmp(warnID,rocketDataWarnID) == 0
+	if  exist('warnsDisplayed','var') == true
+        newWarnNum = length(warnsDisplayed)+1;
+    else
+        newWarnNum = 1; warnsDisplayed = cell(1);
+	end
+    
+        if  max(strcmp(warnsDisplayed,rocketDataWarnID)) == 0
             warning(rocketDataWarnID,rocketDataWarnMSG)
+            warnsDisplayed{newWarnNum} = rocketDataWarnID;
             sim_dragCoefO(1) = input('Enter a value to set the parasite drag to: ');
         end
         
@@ -3443,9 +3590,15 @@ if  staticStability == true
 
     if  ~(((nose_length/R_length) >= 0.2) && ((nose_length/R_length) <= 0.6))
             
-            [~,warnID] = lastwarn;
-            if  (strcmp(warnID,CDcalcWarnID) == 0) && (sim_dragCoefO(1) == 0)
+        if  exist('warnsDisplayed','var') == true
+            newWarnNum = length(warnsDisplayed)+1;
+        else
+            newWarnNum = 1; warnsDisplayed = cell(1);
+        end
+        
+            if  (max(strcmp(warnsDisplayed,CDcalcWarnID)) == 0) && (sim_dragCoefO(1) == 0)
                 warning(CDcalcWarnID,CDcalcWarnMSG)
+                warnsDisplayed{newWarnNum} = CDcalcWarnID;
                 setDragCoef = max(strcmp((input('Set the parasite drag coefficient to a constant value (e.g. 0.75)? [Y/N]: ','s')),yes));
                 if  setDragCoef == true
                     sim_dragCoefO(1) = input('Enter a value to set the parasite drag to: ');
@@ -3474,9 +3627,15 @@ if  staticStability == true
                                                         
             if      critRatioError == true
                 
-                    [~,warnID] = lastwarn;
-                    if  strcmp(warnID,critWarnID) == 0
+                if  exist('warnsDisplayed','var') == true
+                    newWarnNum = length(warnsDisplayed)+1;
+                else
+                    newWarnNum = 1; warnsDisplayed = cell(1);
+                end
+            
+                    if  max(strcmp(warnsDisplayed,critWarnID)) == 0
                         warning(critWarnID,critWarnMSG)
+                        warnsDisplayed{newWarnNum} = critWarnID;
                     end
             end
         end
@@ -3484,9 +3643,15 @@ if  staticStability == true
     
 elseif  staticStability == false
     
-        [~,warnID] = lastwarn;
-        if  strcmp(warnID,rocketDataWarnID) == 0
+	if  exist('warnsDisplayed','var') == true
+        newWarnNum = length(warnsDisplayed)+1;
+    else
+        newWarnNum = 1; warnsDisplayed = cell(1);
+	end
+            
+        if  max(strcmp(warnsDisplayed,rocketDataWarnID)) == 0
             warning(rocketDataWarnID,rocketDataWarnMSG)
+            warnsDisplayed{newWarnNum} = rocketDataWarnID;
             sim_dragCoefO(1) = input('Enter a value to set the parasite drag to: ');
         end
         
@@ -3706,6 +3871,11 @@ end
 
 sim_flightPhase = sim_flightPhase(2:end);
 clear defaultDragCoefO
+clear warnsDisplayed
+
+if  max(sim_angleOfAttack*(180/pi)) > 125
+    warning('Extremely high angle of attack encountered.')
+end
 
 elapsedTime = toc;
 disp(['Time elapsed whilst running flight simulation: ',num2str(elapsedTime),' seconds.'])
@@ -4052,11 +4222,14 @@ makeGraph('Line',simRunNum,'Static Margin','Time (s)','Margin (m)',sim_time,sim_
 makeGraph('Line',simRunNum,'Stability Calibers','Time (s)','Calibers',sim_time,sim_stability)
 
     %%
+if  (wind_velocity ~= 0)
     disp('Lift coefficient calculated for a flat plate (symmetric airfoil) based on NACA-0015 results.')
+    makeGraph('Line',simRunNum,'Angle of Attack (up to apogee)','Time (s)','Angle (deg)',sim_time(1:ApoIndex),sim_angleOfAttack(1:ApoIndex))
     makeGraph('Scatter',simRunNum,'Lift Coefficient vs. Angle of Attack','Angle of Attack (deg)','Lift Coefficient',sim_angleOfAttack*(180/pi),sim_liftCoef)
     makeGraph('Scatter',simRunNum,'Lift-to-Drag Ratio (Drag Polar)','Drag (coefficient, parasite+induced)','Lift (coefficient)',(sim_dragCoefO+sim_dragCoefI),sim_liftCoef)
     makeGraph('Scatter',simRunNum,'Drag Curve (Parasite vs. Lift-Induced)','Velocity (m/s)','Drag Coefficient','Parasitic Drag','Lift-Induced Drag','Total Drag Coefficient', ...
               sim_velocity2,sim_dragCoefO,sim_velocity2,sim_dragCoefI,sim_velocity2,(sim_dragCoefO+sim_dragCoefI))
+end
 
 	%%
 if  (wind_velocity ~= 0) && (windEffect_method == true)
@@ -4102,11 +4275,12 @@ if  (wind_velocity ~= 0) && (windEffect_method == true)
       
             figure(1)
             bar((windSpeedAxis-(windSpeedAxis(2)-windSpeedAxis(1))/2),probDens_Data,1); hold on
-            plot((windSpeedAxis-(windSpeedAxis(2)-windSpeedAxis(1))/2),probDens_Fnct/2,'Color','c','LineWidth',2); hold on
+            probDens_Fnct = probDens_Fnct*(1/(round(max(probDens_Fnct)/max(probDens_Data)))); %%%DEV:NB%%%
+            plot((windSpeedAxis-(windSpeedAxis(2)-windSpeedAxis(1))/2),probDens_Fnct,'Color','c','LineWidth',2); hold on
             plot([(sum(abs(windVelocity_preAlt))/length(windVelocity_preAlt)),(sum(abs(windVelocity_preAlt))/length(windVelocity_preAlt))],...
                 [0,max(probDens_Fnct)],'LineWidth',2,'Color','r'); hold on
             plot([abs(wind_velocity),abs(wind_velocity)],[0,max(probDens_Fnct)],'LineWidth',2,'Color','y')
-            axis([0,max(windSpeedAxis),0,max(probDens_Fnct)/2])
+            axis([0,max(windSpeedAxis),0,max(probDens_Fnct)])
             set(gca,'Color',[0.8 0.8 0.8]);
             title('Wind Speed Probability Density Comparison');
             xlabel('Wind speed (m/s)'); ylabel('Probability Density')
@@ -4270,9 +4444,20 @@ while	animCounter <= length(sim_time)
                 disp(['Simulation time = ',num2str(sim_time(animCounter)),' seconds. Real time elapsed = ',num2str(realTime),' seconds.'])
                 tCounter(1) = animCounter;
                 
-                if  sim_time(animCounter) <= burnout(1)
-                    disp(['Fuel/Propellant remaining = ',num2str(100*(sim_mass2(animCounter)...
-                                                -sum(stage_inertMass))/sum(stage_propMass)),'%'])
+                if  sim_time(animCounter) <= ceil(burnout(1))
+                    if      motorOFratio == true
+                        switch stage_motorType(1)
+                            case {1,2}
+                                disp(['Stage 1: Fuel/Propellant remaining = ',num2str(100*(sim_mass2(animCounter)...
+                                    -sum(stage_inertMass))/sum(stage_propMass)),'%'])
+                            case {3,4}
+                                disp(['Stage 1: Oxidiser remaining = ',num2str(100*(sim_propellantMass(animCounter)/propellantMass)),...
+                                    '% | Fuel remaining = ',num2str(100*(sim_fuelMass(animCounter)/fuelMass)),'%'])
+                        end
+                    elseif  motorOFratio == false
+                                disp(['Stage 1: Fuel/Propellant remaining = ',num2str(100*(sim_mass2(animCounter)...
+                                    -sum(stage_inertMass))/sum(stage_propMass)),'%'])
+                    end
                 end
         end
         %
